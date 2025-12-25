@@ -11,7 +11,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, print_layout
-from math import align_up
+from math import align_up, ceildiv
 from random.random import randn
 from utils.index import IndexList
 
@@ -71,13 +71,22 @@ fn matmul[
     by = Int(block_idx.y)
 
     c_col = bx * BN + tx
-    c_row = by * BN + ty
+    c_row = by * BM + ty
 
     c_val: Scalar[dtype] = 0
 
     for k in range(0, K, BK):
-        smem_a[ty, tx] = a.load[1](c_row, k + tx)
-        smem_b[ty, tx] = b.load[1](k + ty, c_col)
+        smem_a_val: Scalar[dtype] = 0
+        smem_b_val: Scalar[dtype] = 0
+
+        if c_row < M and k + tx < K:
+            smem_a_val = a.load[1](c_row, k + tx)
+
+        if k + ty < K and c_col < N:
+            smem_b_val = b.load[1](k + ty, c_col)
+
+        smem_a[ty, tx] = smem_a_val
+        smem_b[ty, tx] = smem_b_val
 
         barrier()
 
@@ -86,7 +95,8 @@ fn matmul[
 
         barrier()
 
-    c.store[1](c_row, c_col, c_val)
+    if c_row < M and c_col < N:
+        c.store[1](c_row, c_col, c_val)
 
 
 def equal[
@@ -111,7 +121,7 @@ def equal[
     
 
 def main():
-    comptime M = 256
+    comptime M = 127
     comptime N = 256
     comptime K = 256
     comptime BM = 16
@@ -155,7 +165,7 @@ def main():
         a_tensor,
         b_tensor,
         c_tensor,
-        grid_dim=(N // BN, M // BM),
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(BN, BM),
     )
 
