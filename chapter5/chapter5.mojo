@@ -67,8 +67,8 @@ fn matmul[
 
     tx = Int(thread_idx.x)
     ty = Int(thread_idx.y)
-    bx = Int(block_dim.x)
-    by = Int(block_dim.y)
+    bx = Int(block_idx.x)
+    by = Int(block_idx.y)
 
     c_col = bx * BN + tx
     c_row = by * BN + ty
@@ -84,34 +84,39 @@ fn matmul[
         for bk in range(BK):
             c_val += smem_a.load[1](ty, bk) * smem_b.load[1](bk, tx)
 
+        barrier()
+
     c.store[1](c_row, c_col, c_val)
 
 
 def equal[
     dtype: DType, a_layout: Layout, b_layout: Layout
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    out_tensor: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    ref_tensor: LayoutTensor[dtype, a_layout, MutAnyOrigin],
 ) -> Bool:
-    is_equal = False
+    shape = ref_tensor.runtime_layout.shape.value
 
-    @__copy_capture(a, b)
-    @always_inline
-    @parameter
-    fn equals[width: Int, rank: Int, alignment: Int = 1](index: IndexList[rank]):
-        is_equal &= a.load[width](index) == b.load[width](index)
+    for m in range(shape[0]):
+        for n in range(shape[1]):
+            out_val = out_tensor.load[1](m, n)
+            ref_val = ref_tensor.load[1](m, n)
 
-    elementwise[equals, 1](a.runtime_layout.shape.value)
-    return is_equal
+            if out_val != ref_val:
+                print(m, n)
+                print("Out: ", out_val)
+                print("Ref: ", ref_val)
+                return False
+    return True
     
 
 def main():
     comptime M = 256
     comptime N = 256
     comptime K = 256
-    comptime BM = 32
-    comptime BN = 32
-    comptime BK = 32
+    comptime BM = 16
+    comptime BN = 16
+    comptime BK = 16
 
     comptime dtype = DType.float32
     var ctx = DeviceContext()
@@ -121,8 +126,6 @@ def main():
     var c_h = ctx.enqueue_create_host_buffer[dtype](M * N)
 
     var c_ref = ctx.enqueue_create_host_buffer[dtype](M * N)
-
-    ctx.synchronize()
 
     randn[dtype](a_h.unsafe_ptr(), len(a_h))
     randn[dtype](b_h.unsafe_ptr(), len(b_h))
@@ -169,7 +172,7 @@ def main():
 
     c_host_tensor = LayoutTensor[dtype, c_layout, MutAnyOrigin](c_h)
 
-    if equal(c_ref_tensor, c_host_tensor):
+    if equal(c_host_tensor, c_ref_tensor):
         print("Pass")
     else:
         print("Fail")
