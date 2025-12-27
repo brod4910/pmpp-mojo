@@ -15,6 +15,7 @@ from math import align_up, ceildiv
 from random.random import randn
 from utils.index import IndexList
 
+
 fn ref_matmul[
     dtype: DType,
     a_layout: Layout,
@@ -118,7 +119,7 @@ def equal[
                 print("Ref: ", ref_val)
                 return False
     return True
-    
+
 
 def main():
     comptime M = 127

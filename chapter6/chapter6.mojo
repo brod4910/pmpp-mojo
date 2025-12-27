@@ -15,6 +15,7 @@ from math import align_up, ceildiv
 from random.random import randn
 from utils.index import IndexList
 
+
 fn ref_matmul[
     dtype: DType,
     a_layout: Layout,
@@ -47,7 +48,7 @@ fn matmul[
     BM: Int,
     BN: Int,
     BK: Int,
-    COARSE_FACTOR: Int
+    COARSE_FACTOR: Int,
 ](
     a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
     b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
@@ -74,12 +75,16 @@ fn matmul[
     c_col_start = bx * BN * COARSE_FACTOR + tx
     c_row = by * BM + ty
 
-    c_val = LayoutTensor[
-        dtype,
-        Layout.row_major(COARSE_FACTOR),
-        MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().fill(0)
+    c_val = (
+        LayoutTensor[
+            dtype,
+            Layout.row_major(COARSE_FACTOR),
+            MutAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     for k in range(0, K, BK):
         smem_a_val: Scalar[dtype] = 0
@@ -87,9 +92,9 @@ fn matmul[
 
         if c_row < M and k + tx < K:
             smem_a_val = a.load[1](c_row, k + tx)
-        
+
         for cf in range(COARSE_FACTOR):
-            cf_col = c_col_start + cf*BN
+            cf_col = c_col_start + cf * BN
             if k + ty < K and cf_col < N:
                 smem_b_val = b.load[1](k + ty, cf_col)
 
@@ -128,7 +133,7 @@ def equal[
                 print("Ref: ", ref_val)
                 return False
     return True
-    
+
 
 def main():
     comptime M = 128
