@@ -74,7 +74,12 @@ fn matmul[
     c_col_start = bx * BN * COARSE_FACTOR + tx
     c_row = by * BM + ty
 
-    c_val = InlineArray[Scalar[dtype], COARSE_FACTOR](fill=0)
+    c_val = LayoutTensor[
+        dtype,
+        Layout.row_major(COARSE_FACTOR),
+        MutAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation().fill(0)
 
     for k in range(0, K, BK):
         smem_a_val: Scalar[dtype] = 0
@@ -101,7 +106,7 @@ fn matmul[
     for cf in range(COARSE_FACTOR):
         cf_col = c_col_start + cf * BN
         if c_row < M and cf_col < N:
-            c.store[1](c_row, cf_col, c_val[cf])
+            c.store[1](c_row, cf_col, c_val.load[1](0, cf))
 
 
 def equal[
